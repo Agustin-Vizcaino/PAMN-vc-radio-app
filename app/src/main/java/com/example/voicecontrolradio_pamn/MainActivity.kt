@@ -34,10 +34,14 @@ class MainActivity : ComponentActivity() {
             VoiceControlRadioPAMNTheme {
                 GradientBackground {
                     Scaffold(modifier = Modifier.fillMaxSize(), containerColor = Color.Transparent) { innerPadding ->
-                        Greeting(
-                            name = "Android",
-                            modifier = Modifier.padding(innerPadding)
-                        )
+                        Box(modifier = Modifier.padding(innerPadding)) {
+                            AppFrame {
+                                Greeting(
+                                    name = "Android",
+                                    //modifier = Modifier.padding(innerPadding)
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -92,6 +96,35 @@ fun GradientBackground(modifier: Modifier = Modifier, Content: @Composable () ->
     Box(modifier = Modifier.fillMaxSize().background(gradientBrush)) {
         Content()
     }
+}
+
+@Composable
+fun AppFrame(Content: @Composable () -> Unit) {
+    var frameColor = GlobalColorsPalette.current.backgroundFrame.copy(alpha = 0.25f)
+    Box(modifier = Modifier.fillMaxSize()) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val margin = 10.dp.toPx()
+            val rectWidth = size.width - 2 * margin
+            val rectHeight = size.height - 2 * margin
+            val cornerRadius = 10.dp.toPx()
+            val color = frameColor
+
+            drawRoundRect(
+                color = color,
+                topLeft = androidx.compose.ui.geometry.Offset(margin, margin),
+                size = androidx.compose.ui.geometry.Size(rectWidth, rectHeight),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerRadius, cornerRadius)
+            )
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(10.dp) // Match the rectangle's margin
+        ) {
+            Content()
+        }
+    }
+
 }
 
 /*@Preview(showBackground = true)

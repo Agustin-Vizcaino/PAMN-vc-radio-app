@@ -20,8 +20,8 @@ data class GlobalColors (
     val recordingAnimation: Color = Color.Unspecified
 )
 
-val BaseOrange = Color(color = 0xFFFF8000)
-val BaseBlue = Color(color = 0xFF2168BA)
+val BaseOrange = Color(color = 0xFF7F4001)
+val BaseBlue = Color(color = 0xFF10345D)
 val DimBlue = Color(color = 0xFF4C5E73)
 
 val BaseClear = Color(color = 0xFFD9D9D9)
