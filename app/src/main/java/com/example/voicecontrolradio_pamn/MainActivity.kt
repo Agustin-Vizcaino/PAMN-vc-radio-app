@@ -37,7 +37,7 @@ class MainActivity : ComponentActivity() {
                         Box(modifier = Modifier.padding(innerPadding)) {
                             AppFrame {
                                 Greeting(
-                                    name = "Android",
+                                    name = "Androidd",
                                     //modifier = Modifier.padding(innerPadding)
                                 )
                             }
