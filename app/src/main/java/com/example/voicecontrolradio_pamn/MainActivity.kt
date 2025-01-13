@@ -42,7 +42,7 @@ class MainActivity : ComponentActivity() {
                             AppFrame {
                                 CenteredLogo()
                                 Greeting(
-                                    name = "Android",
+                                    name = "Androidd",
                                     //modifier = Modifier.padding(innerPadding)
                                 )
                             }
