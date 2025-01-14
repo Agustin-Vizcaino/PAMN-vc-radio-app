@@ -42,8 +42,15 @@ import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import android.Manifest
+import androidx.activity.compose.ManagedActivityResultLauncher
+import androidx.activity.result.ActivityResult
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import com.example.voicecontrolradio_pamn.ui.theme.VoiceControlRadioPAMNTheme
 import com.example.voicecontrolradio_pamn.ui.theme.app.GlobalColorsPalette
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
 import java.util.Locale
 
 val language = arrayOf("es-ES", Locale.getDefault())
@@ -63,6 +70,7 @@ class MainActivity : ComponentActivity() {
                     Scaffold(modifier = Modifier.fillMaxSize(), containerColor = Color.Transparent) { innerPadding ->
                         Box(modifier = Modifier.padding(innerPadding)) {
                             AppFrame {
+                                Button(onClick = )
                                 CenteredLogo()
                                 Greeting(
                                     name = "Androidd",
@@ -164,6 +172,87 @@ fun CenteredLogo() {
             contentDescription = "Centered Logo",
             modifier = Modifier.fillMaxSize(0.66f)
         )
+    }
+}
+
+/*@Composable
+fun CreateLauncher(): ManagedActivityResultLauncher<Intent, ActivityResult> {
+    val speechText = remember { mutableStateOf("Your speech will appear here.") }
+    return rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        if (it.resultCode == Activity.RESULT_OK) {
+            val data = it.data
+            val result = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            speechText.value = result?.get(0) ?: "No speech detected."
+        } else {
+            speechText.value = "[Speech recognition failed.]"
+        }
+    }
+}
+
+@Composable
+fun speech() {
+    val speechText = remember { mutableStateOf("Your speech will appear here.") }
+    val launcher = CreateLauncher()
+
+    val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+    intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+    //intent.putExtra("android.speech.extra.EXTRA_ADDITIONAL_LANGUAGES", language);
+    intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "es-ES")
+    //intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+    intent.putExtra(RecognizerIntent.EXTRA_PROMPT, "Go on then, say something.")
+    launcher.launch(intent)
+}*/
+
+suspend fun performSpeechRecognition(): String {
+    val deferredResult = CompletableDeferred<String>()
+
+    @Composable
+    fun CreateLauncher(): ManagedActivityResultLauncher<Intent, ActivityResult> {
+        return rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode == Activity.RESULT_OK) {
+                val data = result.data
+                val recognizedText = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.get(0)
+                deferredResult.complete(recognizedText ?: "No speech detected.")
+            } else {
+                deferredResult.complete("[Speech recognition failed.]")
+            }
+        }
+    }
+
+    @Composable
+    fun StartSpeechRecognition() {
+        val launcher = CreateLauncher()
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "es-ES")
+            putExtra(RecognizerIntent.EXTRA_PROMPT, "Go on then, say something.")
+        }
+        launcher.launch(intent)
+    }
+
+    StartSpeechRecognition()
+
+    return deferredResult.await()
+}
+
+@Composable
+fun SpeechRecognitionButton(onSpeechResult: (String) -> Unit) {
+    val scope = rememberCoroutineScope()
+    var isLoading by remember { mutableStateOf(false) }
+
+    Button(onClick = {
+        scope.launch {
+            isLoading = true
+            val recognizedSpeech = performSpeechRecognition()
+            isLoading = false
+            onSpeechResult(recognizedSpeech)
+        }
+    }) {
+        if (isLoading) {
+            Text("Listening...") // Replace with your loading animation
+        } else {
+            Text("Start Speech Recognition")
+        }
     }
 }
 
