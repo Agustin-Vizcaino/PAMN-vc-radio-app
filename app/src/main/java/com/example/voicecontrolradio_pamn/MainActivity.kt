@@ -36,37 +36,15 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             VoiceControlRadioPAMNTheme {
-                GradientBackground {
-                    Scaffold(modifier = Modifier.fillMaxSize(), containerColor = Color.Transparent) { innerPadding ->
-                        Box(modifier = Modifier.padding(innerPadding)) {
-                            AppFrame {
-                                CenteredLogo()
-                                Greeting(
-                                    name = "Androidd",
-                                    //modifier = Modifier.padding(innerPadding)
-                                )
-                            }
-                        }
-                    }
+                VoiceLockFrame {
+                    CenteredLogo()
+                    Greeting(
+                        name = "Android",
+                        //modifier = Modifier.padding(innerPadding)
+                    )
                 }
             }
         }
-        /*setContent {
-            VoiceControlRadioPAMNTheme {
-                Box(modifier = Modifier.fillMaxSize()) {
-                    GradientBackground()
-                    Greeting(
-                        name = "Android"
-                    )
-                }
-
-                /*Scaffold(
-                    Box(modifier = Modifier.padding(innerPadding)) {
-
-                    }
-                }*/
-            }
-        }*/
     }
 }
 
@@ -91,15 +69,26 @@ fun GradientBackground(modifier: Modifier = Modifier, Content: @Composable () ->
     val gradientBrush = Brush.verticalGradient(
         0.5f to GlobalColorsPalette.current.backgroundStart,
         1.0f to GlobalColorsPalette.current.backgroundEnd
-        /*colors = listOf(
-            GlobalColorsPalette.current.backgroundStart,
-            GlobalColorsPalette.current.backgroundEnd
-        ),
-        startY = 1000f*/
     )
 
     Box(modifier = Modifier.fillMaxSize().background(gradientBrush)) {
         Content()
+    }
+}
+
+@Composable
+fun VoiceLockFrame(Content: @Composable () -> Unit) {
+    GradientBackground {
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            containerColor = Color.Transparent
+        ) { innerPadding ->
+            Box(modifier = Modifier.padding(innerPadding)) {
+                AppFrame {
+                    Content()
+                }
+            }
+        }
     }
 }
 
