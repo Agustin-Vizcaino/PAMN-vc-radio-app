@@ -172,3 +172,98 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+
+/*interface Context {
+    // Identificador del contexto
+    val id: String
+    // Palabras/comandos/tipos que acepta este contexto
+    val trigger: Array<String>
+    // Si este contexto puede ser cancelado
+    val cancellable: Boolean
+    // Contextos alcanzables desde este contexto, si el usuario usa un "trigger" aceptado por alguno de estos se pasa a ese contexto
+    val children: Array<String>
+    // Qué decirle al usuario si pasa un comando de voz no aceptado por ningún hijo
+    val invalid: String
+
+    // Qué hacer cuando se alcanza este contexto
+    public fun onArrival()
+
+    // Qué hacer cuando el usuario pasa un comando de voz
+    public fun onCommand(command: String)
+
+    fun foo() : String   // abstract method (returns String)
+    fun hello() {   // method with default implementation
+        // body (optional)
+    }
+}
+
+val contexts = {
+    "c1/default": {
+        ""
+    }
+}
+
+sealed class CommandContext {
+    // Estado pasivo de la aplicación, abierta sin reproducción
+    object Default : CommandContext()
+    // Hay una emisora seleccionada
+    object Playing : CommandContext()
+    // El usuario está buscando una emisora nueva
+    object Searching : CommandContext()
+    // El usuario está seleccionando una emisora después de una búsqueda
+    object Selecting : CommandContext()
+    object VolumeAdjustment : CommandContext()
+    data class Custom(val description: String) : CommandContext()
+}
+
+class CommandViewModel : ViewModel() {
+    var commandContext by mutableStateOf<CommandContext>(CommandContext.Default)
+        private set
+
+    var feedbackMessage by mutableStateOf("Awaiting command...")
+        private set
+
+    fun processCommand(input: String) {
+        when (commandContext) {
+            is CommandContext.Default -> handleDefaultCommand(input)
+            is CommandContext.VolumeAdjustment -> handleVolumeCommand(input)
+            is CommandContext.Custom -> handleCustomCommand(input)
+        }
+    }
+
+    private fun handleDefaultCommand(input: String) {
+        when {
+            input.contains("change volume", ignoreCase = true) -> {
+                feedbackMessage = "Volume command detected. Please specify a level."
+                commandContext = CommandContext.VolumeAdjustment
+            }
+            input.contains("play music", ignoreCase = true) -> {
+                feedbackMessage = "Playing music..."
+                playMusic()
+            }
+            else -> feedbackMessage = "Command not recognized."
+        }
+    }
+
+    private fun handleVolumeCommand(input: String) {
+        input.toIntOrNull()?.let { level ->
+            feedbackMessage = "Setting volume to $level."
+            setVolume(level)
+            commandContext = CommandContext.Default
+        } ?: run {
+            feedbackMessage = "Invalid volume level. Try again."
+        }
+    }
+
+    private fun handleCustomCommand(input: String) {
+        feedbackMessage = "Custom command: $input"
+    }
+
+    private fun playMusic() {
+        // Trigger music playback logic here
+    }
+
+    private fun setVolume(level: Int) {
+        // Adjust volume logic here
+    }
+}*/
