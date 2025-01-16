@@ -79,7 +79,6 @@ class MainActivity : ComponentActivity() {
                         ReadCommand.value = recognizedText
                     }
                     CenteredLogo()
-                    player()
                 }
             }
         }
@@ -176,33 +175,6 @@ class MainActivity : ComponentActivity() {
                 modifier = Modifier.fillMaxSize(0.66f)
             )
         }
-    }
-}
-
-@Composable
-fun player() {
-    val url = "https://dispatcher.rndfnk.com/crtve/rnerc/main/mp3/high"
-    val context = LocalContext.current
-    Button(onClick = {
-        val mediaPlayer = MediaPlayer()
-        mediaPlayer.setAudioAttributes(
-            AudioAttributes.Builder()
-                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                .build()
-        )
-
-        try {
-            mediaPlayer.setDataSource(context, Uri.parse(url))
-            mediaPlayer.prepareAsync()
-            mediaPlayer.setOnPreparedListener { mp ->
-                mp.start()
-            }
-        } catch (e: IOException) {
-            e.printStackTrace()
-        }
-
-    }) {
-        Text(text = "Play")
     }
 }
 
