@@ -230,8 +230,9 @@ class CommandController2 {
             TODO("Talk to user")
             return
         }
+        if (response != null)
         when (command) {
-            "cancel" ->
+            //"cancel" ->
         }
     }
 }
