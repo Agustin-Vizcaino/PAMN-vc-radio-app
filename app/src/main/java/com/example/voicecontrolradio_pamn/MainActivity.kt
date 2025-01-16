@@ -54,6 +54,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.app.ActivityCompat.finishAffinity
 import androidx.lifecycle.ViewModel
 import com.example.voicecontrolradio_pamn.ui.theme.VoiceControlRadioPAMNTheme
 import com.example.voicecontrolradio_pamn.ui.theme.app.GlobalColorsPalette
@@ -63,7 +64,9 @@ import java.io.IOException
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
-    private var ReadCommand = mutableStateOf("Initial")
+    //private var ReadCommand = mutableStateOf("Initial")
+    private val CommandController = CommandController2()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -76,7 +79,8 @@ class MainActivity : ComponentActivity() {
             VoiceControlRadioPAMNTheme {
                 VoiceLockFrame {
                     SButton { recognizedText ->
-                        ReadCommand.value = recognizedText
+                        //ReadCommand.value = recognizedText
+                        CommandController.command(recognizedText)
                     }
                     CenteredLogo()
                 }
@@ -101,7 +105,7 @@ class MainActivity : ComponentActivity() {
                 .fillMaxSize(),
             color = Color.Transparent,
             onClick = {
-                ReadCommand.value = "Reading"
+                //ReadCommand.value = "Reading"
                 val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                     putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                     putExtra(RecognizerIntent.EXTRA_LANGUAGE, "es-ES")
@@ -181,50 +185,110 @@ class MainActivity : ComponentActivity() {
 // Link Radio Clásica
 // https://dispatcher.rndfnk.com/crtve/rnerc/main/mp3/high
 
-/*interface Context {
-    // Identificador del contexto
-    val id: String
-    // Palabras/comandos/tipos que acepta este contexto
-    val trigger: Array<String>
-    // Si este contexto puede ser cancelado
-    val cancellable: Boolean
-    // Contextos alcanzables desde este contexto, si el usuario usa un "trigger" aceptado por alguno de estos se pasa a ese contexto
-    val children: Array<String>
-    // Qué decirle al usuario si pasa un comando de voz no aceptado por ningún hijo
-    val invalid: String
+class CommandController2 {
+    var context: String = "default"
+    val activity = context as Activity
+    var player = MediaPlayerManager
+    //Put API responses here
+    var response = null
 
-    // Qué hacer cuando se alcanza este contexto
-    public fun onArrival()
+    init {
+        context = "default"
+    }
 
-    // Qué hacer cuando el usuario pasa un comando de voz
-    public fun onCommand(command: String)
+    public fun command(command: String) {
+        if (command == "close") {
+            player.stopPlayer()
+            finishAffinity(activity)
+        }
+        when (context) {
+            "default" -> command_default(command)
+            "play" -> command_play(command)
+            "search" -> command_search(command)
+            else -> {
+                error("Invalid context. How did you even manage that?")
+            }
+        }
+    }
 
-    fun foo() : String   // abstract method (returns String)
-    fun hello() {   // method with default implementation
-        // body (optional)
+    private fun command_default(command: String) {
+        when (command) {
+            "search" -> context = "search"
+            else -> {
+                TODO("Warn user of recog error")
+            }
+        }
+    }
+
+    private fun command_play(command: String) {
+
+    }
+
+    private fun command_search(command: String) {
+        if (command == "cancel") {
+            context = "default"
+            TODO("Talk to user")
+            return
+        }
+        when (command) {
+            "cancel" ->
+        }
     }
 }
 
-val contexts = {
-    "c1/default": {
-        ""
+
+/*class CommandContextController {
+    private var contextStack: ArrayDeque<Context> = ArrayDeque()
+
+    init {
+        contextStack.add(DefaultContext())
+    }
+
+    private interface Context {
+        // Identificador del contexto
+        val id: String
+        // Palabras/comandos/tipos que acepta este contexto
+        val trigger: Array<String>
+        // Si este contexto puede ser cancelado
+        val cancellable: Boolean
+        // Contextos alcanzables desde este contexto, si el usuario usa un "trigger" aceptado por alguno de estos se pasa a ese contexto
+        val children: Array<String>
+        // Qué decirle al usuario si pasa un comando de voz no aceptado por ningún hijo
+        val invalid: String
+
+        // Qué hacer cuando se alcanza este contexto
+        public fun onArrival()
+
+        // Qué hacer cuando el usuario pasa un comando de voz
+        public fun onCommand(command: String)
+
+        public fun onPause()
+
+        public fun onResume()
+
+        public fun onDeparture()
+    }
+
+    private class DefaultContext : Context {
+        override val id = "gen/def"
+        override val trigger = arrayOf("")
+        override val cancellable = false
+        override val children = arrayOf("gen/search", "gen/play")
+        override val invalid = "Lo siento, no he entendido el comando"
+
+        override fun onArrival() {
+            TODO("Not yet implemented")
+        }
+
+        override fun onCommand(command: String) {
+            if (command == "search") {
+
+            }
+        }
     }
 }
 
-sealed class CommandContext {
-    // Estado pasivo de la aplicación, abierta sin reproducción
-    object Default : CommandContext()
-    // Hay una emisora seleccionada
-    object Playing : CommandContext()
-    // El usuario está buscando una emisora nueva
-    object Searching : CommandContext()
-    // El usuario está seleccionando una emisora después de una búsqueda
-    object Selecting : CommandContext()
-    object VolumeAdjustment : CommandContext()
-    data class Custom(val description: String) : CommandContext()
-}
-
-class CommandViewModel : ViewModel() {
+/*class CommandViewModel : ViewModel() {
     var commandContext by mutableStateOf<CommandContext>(CommandContext.Default)
         private set
 
