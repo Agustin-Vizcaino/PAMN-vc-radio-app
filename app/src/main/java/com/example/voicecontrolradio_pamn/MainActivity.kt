@@ -193,8 +193,10 @@ fun player() {
 
         try {
             mediaPlayer.setDataSource(context, Uri.parse(url))
-            mediaPlayer.prepare()
-            mediaPlayer.start()
+            mediaPlayer.prepareAsync()
+            mediaPlayer.setOnPreparedListener { mp ->
+                mp.start()
+            }
         } catch (e: IOException) {
             e.printStackTrace()
         }
