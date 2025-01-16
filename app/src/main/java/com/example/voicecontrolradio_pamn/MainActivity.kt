@@ -42,6 +42,9 @@ import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import android.Manifest
+import android.media.AudioAttributes
+import android.media.MediaPlayer
+import android.net.Uri
 import android.speech.SpeechRecognizer
 import androidx.activity.compose.ManagedActivityResultLauncher
 import androidx.activity.result.ActivityResult
@@ -50,11 +53,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.ViewModel
 import com.example.voicecontrolradio_pamn.ui.theme.VoiceControlRadioPAMNTheme
 import com.example.voicecontrolradio_pamn.ui.theme.app.GlobalColorsPalette
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
+import java.io.IOException
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
@@ -74,6 +79,7 @@ class MainActivity : ComponentActivity() {
                         ReadCommand.value = recognizedText
                     }
                     CenteredLogo()
+                    player()
                 }
             }
         }
@@ -172,6 +178,34 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+
+@Composable
+fun player() {
+    val url = "https://dispatcher.rndfnk.com/crtve/rnerc/main/mp3/high"
+    val context = LocalContext.current
+    Button(onClick = {
+        val mediaPlayer = MediaPlayer()
+        mediaPlayer.setAudioAttributes(
+            AudioAttributes.Builder()
+                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                .build()
+        )
+
+        try {
+            mediaPlayer.setDataSource(context, Uri.parse(url))
+            mediaPlayer.prepare()
+            mediaPlayer.start()
+        } catch (e: IOException) {
+            e.printStackTrace()
+        }
+
+    }) {
+        Text(text = "Play")
+    }
+}
+
+// Link Radio Clásica
+// https://dispatcher.rndfnk.com/crtve/rnerc/main/mp3/high
 
 /*interface Context {
     // Identificador del contexto
