@@ -7,6 +7,8 @@ import android.net.Uri
 
 object MediaPlayerManager {
     private var mediaPlayer: MediaPlayer? = null
+    // Número positivo significa pausado, cero significa en reproducción
+    private var UserPaused = -1
 
     fun initializePlayer(context: Context, audioUrl: String) {
         if (mediaPlayer == null) {
@@ -19,21 +21,25 @@ object MediaPlayerManager {
                 setDataSource(context, Uri.parse(audioUrl))
                 setOnPreparedListener {
                     it.start()
+                    UserPaused = 0
                 }
                 prepareAsync()
             }
         }
     }
 
-    fun adjustVolume(volume: Float) {
-        mediaPlayer?.setVolume(volume, volume)
+    fun adjustVolume(volume: Int) {
+        mediaPlayer?.setVolume(volume.toFloat()/100, volume.toFloat()/100)
     }
 
-    fun pausePlayer() {
+    fun pausePlayer(user: Boolean = false) {
+        if (user) UserPaused = 1
         mediaPlayer?.pause()
     }
 
-    fun resumePlayer() {
+    fun resumePlayer(user: Boolean = false) {
+        if (UserPaused == 1 && !user) return
+        if (user) UserPaused = 0
         mediaPlayer?.start()
     }
 
@@ -41,5 +47,9 @@ object MediaPlayerManager {
         mediaPlayer?.stop()
         mediaPlayer?.release()
         mediaPlayer = null
+    }
+
+    fun checkPlayer(): Boolean {
+        return mediaPlayer != null
     }
 }
