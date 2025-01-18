@@ -8,6 +8,9 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.speech.RecognizerIntent
+import android.speech.tts.TextToSpeech
+import android.speech.tts.TextToSpeech.QUEUE_ADD
+import android.speech.tts.TextToSpeech.QUEUE_FLUSH
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -25,6 +28,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -54,6 +58,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.Locale
+import kotlin.math.absoluteValue
 
 //import kotlin.coroutines.jvm.internal.CompletedContinuation.context
 
@@ -63,15 +69,21 @@ class MainActivity : ComponentActivity() {
     private val CommandController = CommandController2(this)
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        //val ttsActivity = TTSActivity()
         super.onCreate(savedInstanceState)
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), 1)
         }
 
+        CommandController.initTTS()
+
+
         enableEdgeToEdge()
         setContent {
             VoiceControlRadioPAMNTheme {
+                //textToSpeechEngine.speak("testing", QUEUE_ADD, null)
+                //if (!textToSpeechEngine.isSpeaking)
                 VoiceLockFrame {
                     SButton { recognizedText ->
                         //ReadCommand.value = recognizedText
@@ -135,8 +147,8 @@ class MainActivity : ComponentActivity() {
             ) { innerPadding ->
                 Box(modifier = Modifier.padding(innerPadding)) {
                     AppFrame {
-                        Content()
                         StationListDisplay(CommandController.stationsState.value)
+                        Content()
                     }
                 }
             }
@@ -214,10 +226,14 @@ class CommandController2 (private val context: Context) {
     // Debería poder usar esto para matar a la app, pero no puedo acceder a esta propiedad, comprobar más tarde
     //val activity = context as Activity
     var player = MediaPlayerManager
+
+    private lateinit var textToSpeechEngine: TextToSpeech
+    //private var tts: TextToSpeech? = null
     //Put API responses here
     var response: MutableList<Station>? = null
 
     public fun Silence(yesno: Boolean) {
+        textToSpeechEngine.stop()
         if (yesno) player.pausePlayer()
         else player.resumePlayer(true)
     }
@@ -236,36 +252,28 @@ class CommandController2 (private val context: Context) {
         error(response.toString())*/
     }
 
-    /*public fun fetchStationsAsync() {
-        val myAgent = "pamn/vcr/0.1"
-        CoroutineScope(Dispatchers.Main).launch {
-            val endpoint = withContext(Dispatchers.IO) {
-                EndpointDiscovery(myAgent).discover()
-            }
 
-            if (endpoint.isPresent) {
-                val radioBrowser = withContext(Dispatchers.IO) {
-                    RadioBrowser(
-                        ConnectionParams.builder()
-                            .apiUrl(endpoint.get())
-                            .userAgent(myAgent)
-                            .timeout(5000)
-                            .build()
-                    )
-                }
+    public fun initTTS() {
+        textToSpeechEngine = TextToSpeech(context,
+            TextToSpeech.OnInitListener { status ->
+                // set our locale only if init was success.
+                if (status == TextToSpeech.SUCCESS) {
+                    textToSpeechEngine.language = Locale("es", "ES")
+                    /*ready = 1
+                    println("AAAAAAAAAAAAAAAAAAAAAAAA")
+                    println(ready)*/
 
-                val stations = withContext(Dispatchers.IO) {
-                    radioBrowser.listStations(ListParameter.create().order(FieldName.NAME)).limit(64)
                 }
+            })
+    }
 
-                // Handle the stations on the main thread (UI thread)
-                stations.forEach { station ->
-                    println("${station.name}: ${station.url}")
-                }
-            } else {
-                println("No endpoint discovered.")
-            }
-        }
+    private fun speak(text: String) {
+        textToSpeechEngine.speak(text, QUEUE_ADD, null)
+    }
+
+    /*override fun onInit(status: Int) {
+
+
     }*/
 
     var stationsState = mutableStateOf<List<Station>>(emptyList())
@@ -306,7 +314,14 @@ class CommandController2 (private val context: Context) {
     }
 
     public fun command(command: String) {
+        if (command == "error") {
+            speak("Error de escucha")
+            return
+        }
+        //tts.sayHello()
+        //playFeedbackMessage("PROBANDO, PROBANDO")
         if (command == "cerrar") {
+            speak("Cerrando aplicación")
             player.stopPlayer()
             // La idea aquí es cerrar todo
             //finishAffinity(activity)
@@ -326,8 +341,8 @@ class CommandController2 (private val context: Context) {
         when (command) {
             "buscar" -> CommandContext = "search"
             else -> {
+                speak("Comando no reconocido")
                 return
-                TODO("Warn user of recog error")
             }
         }
     }
@@ -335,43 +350,44 @@ class CommandController2 (private val context: Context) {
     private fun command_play(command: String) {
         if (PlayState == "volume") {
             if (command == "cancelar") {
+                speak("Cambio de volumen cancelado")
                 PlayState = "default"
-                MediaPlayerManager.resumePlayer(true)
+                MediaPlayerManager.resumePlayer()
                 return
-                TODO("Tell user that volume change was canceled")
             } else {
                 val ParseResult = parseNumberFromText("es-ES",command)
                 if (ParseResult.success) {
                     if (ParseResult.value > -1 && ParseResult.value <= 100) {
-                        print("cosa: $ParseResult.value")
+                        speak("Cambiando volumen a $ParseResult.value")
                         MediaPlayerManager.adjustVolume(ParseResult.value)
                         PlayState = "default"
                         MediaPlayerManager.resumePlayer(true)
                     } else {
-                        print("cosa: error $ParseResult.value")
+                        speak("El nuevo volumen debe estar entre 0 y 100")
                         return
-                        TODO("Tell user that volume needs to be clamped")
                     }
                 }
             }
         } else {
             if (command == "pausar") {
+                speak("Pausando reproductor")
                 MediaPlayerManager.pausePlayer(true)
             } else if (command == "continuar") {
+                speak("Reanudando reproductor")
                 MediaPlayerManager.resumePlayer(true)
             } else if (command == "salir") {
+                speak("Cerrando reproducción")
                 MediaPlayerManager.stopPlayer()
                 CommandContext = "default"
             } else if (command == "buscar") {
+                speak("Iniciando búsqueda. Por favor, indique el nombre de la emisora que desea escuchar")
                 MediaPlayerManager.pausePlayer()
                 CommandContext = "search"
-                return
-                TODO("Tell user we're searching")
             } else if (command == "volumen") {
                 MediaPlayerManager.pausePlayer()
+                speak("Por favor, indique el nuevo volumen deseado entre 0 y 100")
                 PlayState = "volume"
                 return
-                TODO("Tell user to say the new volume value")
             }
         }
     }
@@ -379,9 +395,9 @@ class CommandController2 (private val context: Context) {
     private fun command_search(command: String) {
         if (command == "cancelar") {
             CommandContext = "default"
-            return
-            TODO("Talk to user")
+            speak("Búsqueda cancelada")
         } else if (stationsState.value.isEmpty()) {
+            speak("")
             fetchStationsAsync(command)
         } else if (command == "seleccionar") {
             MediaPlayerManager.initializePlayer(context, stationsState.value[0].url)
