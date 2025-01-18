@@ -85,10 +85,11 @@ class MainActivity : ComponentActivity() {
                 //textToSpeechEngine.speak("testing", QUEUE_ADD, null)
                 //if (!textToSpeechEngine.isSpeaking)
                 VoiceLockFrame {
+                    Text(CommandController.CommandContext.value)
                     SButton { recognizedText ->
                         //ReadCommand.value = recognizedText
-                        CommandController.Silence(false)
                         CommandController.command(recognizedText)
+                        CommandController.Silence(false)
                         //CommandController.fetchStationsAsync(recognizedText)
                     }
                     CenteredLogo()
@@ -220,7 +221,7 @@ class MainActivity : ComponentActivity() {
 
 @SuppressLint("NewApi")
 class CommandController2 (private val context: Context) {
-    var CommandContext: String = "default"
+    public var CommandContext = mutableStateOf("default")
     var PlayState: String = "default"
     var SearchState: String = "default"
     // Debería poder usar esto para matar a la app, pero no puedo acceder a esta propiedad, comprobar más tarde
@@ -235,7 +236,7 @@ class CommandController2 (private val context: Context) {
     public fun Silence(yesno: Boolean) {
         textToSpeechEngine.stop()
         if (yesno) player.pausePlayer()
-        else player.resumePlayer(true)
+        else player.resumePlayer()
     }
 
     // Radio search stuff
@@ -245,7 +246,10 @@ class CommandController2 (private val context: Context) {
     )*/
 
     init {
-        CommandContext = "default"
+        CommandContext.value = "default"
+        PlayState = "default"
+        SearchState = "default"
+        MediaPlayerManager.stopPlayer()
         /*var r: Stream<Station> = radioBrowser.listStationsBy(de.sfuhrm.radiobrowser4j.SearchMode.BYNAME,"radio clásica")
         // Esto puede causar problemas debido a la versión de la API...
         response = r.toList()
@@ -316,18 +320,18 @@ class CommandController2 (private val context: Context) {
     public fun command(command: String) {
         if (command == "error") {
             speak("Error de escucha")
-            return
         }
         //tts.sayHello()
         //playFeedbackMessage("PROBANDO, PROBANDO")
         if (command == "cerrar") {
             speak("Cerrando aplicación")
             player.stopPlayer()
+            textToSpeechEngine.shutdown()
             // La idea aquí es cerrar todo
             //finishAffinity(activity)
         }
         //print(CommandContext)
-        when (CommandContext) {
+        when (CommandContext.value) {
             "default" -> command_default(command)
             "play" -> command_play(command)
             "search" -> command_search(command)
@@ -339,10 +343,11 @@ class CommandController2 (private val context: Context) {
 
     private fun command_default(command: String) {
         when (command) {
-            "buscar" -> CommandContext = "search"
+            "buscar" -> {
+                CommandContext.value = "search"
+            }
             else -> {
                 speak("Comando no reconocido")
-                return
             }
         }
     }
@@ -353,7 +358,6 @@ class CommandController2 (private val context: Context) {
                 speak("Cambio de volumen cancelado")
                 PlayState = "default"
                 MediaPlayerManager.resumePlayer()
-                return
             } else {
                 val ParseResult = parseNumberFromText("es-ES",command)
                 if (ParseResult.success) {
@@ -361,10 +365,9 @@ class CommandController2 (private val context: Context) {
                         speak("Cambiando volumen a $ParseResult.value")
                         MediaPlayerManager.adjustVolume(ParseResult.value)
                         PlayState = "default"
-                        MediaPlayerManager.resumePlayer(true)
+                        MediaPlayerManager.resumePlayer()
                     } else {
                         speak("El nuevo volumen debe estar entre 0 y 100")
-                        return
                     }
                 }
             }
@@ -378,37 +381,36 @@ class CommandController2 (private val context: Context) {
             } else if (command == "salir") {
                 speak("Cerrando reproducción")
                 MediaPlayerManager.stopPlayer()
-                CommandContext = "default"
+                CommandContext.value = "default"
             } else if (command == "buscar") {
                 speak("Iniciando búsqueda. Por favor, indique el nombre de la emisora que desea escuchar")
                 MediaPlayerManager.pausePlayer()
-                CommandContext = "search"
+                CommandContext.value = "search"
             } else if (command == "volumen") {
                 MediaPlayerManager.pausePlayer()
                 speak("Por favor, indique el nuevo volumen deseado entre 0 y 100")
                 PlayState = "volume"
-                return
             }
         }
     }
 
     private fun command_search(command: String) {
         if (command == "cancelar") {
-            CommandContext = "default"
+            CommandContext.value = "default"
             speak("Búsqueda cancelada")
         } else if (stationsState.value.isEmpty()) {
             speak("")
             fetchStationsAsync(command)
         } else if (command == "seleccionar") {
             MediaPlayerManager.initializePlayer(context, stationsState.value[0].url)
-            CommandContext = "play"
+            CommandContext.value = "play"
             PlayState = "default"
         } else if (command == "siguiente") {
             stationsState.value = stationsState.value.drop(1)
             if (stationsState.value.isEmpty()) {
-                if (!player.checkPlayer()) CommandContext = "default"
+                if (!player.checkPlayer()) CommandContext.value = "default"
                 else {
-                    CommandContext = "play"
+                    CommandContext.value = "play"
                     player.resumePlayer(true)
                 }
                 return
