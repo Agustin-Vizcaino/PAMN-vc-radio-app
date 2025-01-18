@@ -27,6 +27,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -63,21 +64,23 @@ import kotlin.math.absoluteValue
 
 //import kotlin.coroutines.jvm.internal.CompletedContinuation.context
 
-
 class MainActivity : ComponentActivity() {
+    private var locale = "es-ES"
     //private var ReadCommand = mutableStateOf("Initial")
-    private val CommandController = CommandController2(this)
+    val TTSIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE, locale)
+    }
+    private val CommandController = CommandController2(this, TTSIntent)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         //val ttsActivity = TTSActivity()
         super.onCreate(savedInstanceState)
 
+        CommandController.initTTS()
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), 1)
         }
-
-        CommandController.initTTS()
-
 
         enableEdgeToEdge()
         setContent {
@@ -86,19 +89,29 @@ class MainActivity : ComponentActivity() {
                 //if (!textToSpeechEngine.isSpeaking)
                 VoiceLockFrame {
                     Text(CommandController.CommandContext.value)
-                    SButton { recognizedText ->
+                    SButton(
+                        onRecognized = { recognizedText ->
+                            CommandController.command(recognizedText)
+                        },
+                        provideSpeechLauncher = { launcher ->
+                            CommandController.setListener(launcher)
+                        //speechLauncher = launcher
+                            //speechLauncher.let { CommandController.speechLauncher = it }
+                        }
+                    )
+                    /*SButton { recognizedText ->
                         //ReadCommand.value = recognizedText
                         CommandController.command(recognizedText)
                         CommandController.Silence(false)
                         //CommandController.fetchStationsAsync(recognizedText)
-                    }
+                    }*/
                     CenteredLogo()
                 }
             }
         }
     }
 
-    @Composable
+    /*@Composable
     fun SButton(onRecognized: (String) -> Unit) {
         val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if (result.resultCode == Activity.RESULT_OK) {
@@ -123,6 +136,40 @@ class MainActivity : ComponentActivity() {
                 }
                 launcher.launch(intent)
             }) {}
+    }*/
+
+    @Composable
+    fun SButton(
+        onRecognized: (String) -> Unit,
+        provideSpeechLauncher: ((Intent) -> Unit) -> Unit // Accepts a callback
+    ) {
+        val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode == Activity.RESULT_OK) {
+                val data = result.data
+                val recognizedText = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.get(0)
+                onRecognized(recognizedText ?: "error")
+            } else {
+                onRecognized("error")
+            }
+        }
+
+        val startSpeechRecognition: (Intent) -> Unit = { intent ->
+            launcher.launch(intent)
+        }
+
+        // Pass the launcher callback to the parent via provideSpeechLauncher
+        LaunchedEffect(Unit) {
+            provideSpeechLauncher(startSpeechRecognition)
+        }
+
+        Surface(
+            modifier = Modifier
+                .fillMaxSize(),
+            color = Color.Transparent,
+            onClick = {
+                CommandController.listen()
+            }
+        ) {}
     }
 
     @Composable
@@ -220,8 +267,12 @@ class MainActivity : ComponentActivity() {
 // https://dispatcher.rndfnk.com/crtve/rnerc/main/mp3/high
 
 @SuppressLint("NewApi")
-class CommandController2 (private val context: Context) {
+class CommandController2 (private val context: Context, TTSIntent: Intent) {
     public var CommandContext = mutableStateOf("default")
+
+    var speechLauncher: ((Intent) -> Unit)? = null
+    var intent = TTSIntent
+
     var PlayState: String = "default"
     var SearchState: String = "default"
     // Debería poder usar esto para matar a la app, pero no puedo acceder a esta propiedad, comprobar más tarde
@@ -269,6 +320,15 @@ class CommandController2 (private val context: Context) {
 
                 }
             })
+    }
+
+    fun setListener(UserSpeechListener: (Intent) -> Unit) {
+        speechLauncher = UserSpeechListener
+    }
+
+    fun listen() {
+        Silence(true)
+        speechLauncher?.invoke(intent)
     }
 
     private fun speak(text: String) {
@@ -320,9 +380,10 @@ class CommandController2 (private val context: Context) {
     public fun command(command: String) {
         if (command == "error") {
             speak("Error de escucha")
+            Silence(false)
+            return
         }
-        //tts.sayHello()
-        //playFeedbackMessage("PROBANDO, PROBANDO")
+
         if (command == "cerrar") {
             speak("Cerrando aplicación")
             player.stopPlayer()
@@ -345,6 +406,11 @@ class CommandController2 (private val context: Context) {
         when (command) {
             "buscar" -> {
                 CommandContext.value = "search"
+                /*val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, "es-ES")
+                }*/
+                listen()
             }
             else -> {
                 speak("Comando no reconocido")
