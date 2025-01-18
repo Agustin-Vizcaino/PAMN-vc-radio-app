@@ -11,6 +11,7 @@ import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
 import android.speech.tts.TextToSpeech.QUEUE_ADD
 import android.speech.tts.TextToSpeech.QUEUE_FLUSH
+import android.speech.tts.UtteranceProgressListener
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -57,24 +58,21 @@ import java.text.NumberFormat
 import kotlin.streams.toList
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.CountDownLatch
 import kotlin.math.absoluteValue
 
 //import kotlin.coroutines.jvm.internal.CompletedContinuation.context
 
 class MainActivity : ComponentActivity() {
     private var locale = "es-ES"
-    //private var ReadCommand = mutableStateOf("Initial")
-    val TTSIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-        putExtra(RecognizerIntent.EXTRA_LANGUAGE, locale)
-    }
-    private val CommandController = CommandController2(this, TTSIntent)
+    private val CommandController = CommandController2(this, locale)
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        //val ttsActivity = TTSActivity()
         super.onCreate(savedInstanceState)
 
         CommandController.initTTS()
@@ -85,63 +83,27 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             VoiceControlRadioPAMNTheme {
-                //textToSpeechEngine.speak("testing", QUEUE_ADD, null)
-                //if (!textToSpeechEngine.isSpeaking)
                 VoiceLockFrame {
-                    Text(CommandController.CommandContext.value)
                     SButton(
                         onRecognized = { recognizedText ->
-                            CommandController.command(recognizedText)
+                            CoroutineScope(Dispatchers.IO).launch {
+                                CommandController.command(recognizedText)
+                            }
                         },
                         provideSpeechLauncher = { launcher ->
                             CommandController.setListener(launcher)
-                        //speechLauncher = launcher
-                            //speechLauncher.let { CommandController.speechLauncher = it }
                         }
                     )
-                    /*SButton { recognizedText ->
-                        //ReadCommand.value = recognizedText
-                        CommandController.command(recognizedText)
-                        CommandController.Silence(false)
-                        //CommandController.fetchStationsAsync(recognizedText)
-                    }*/
                     CenteredLogo()
                 }
             }
         }
     }
 
-    /*@Composable
-    fun SButton(onRecognized: (String) -> Unit) {
-        val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            if (result.resultCode == Activity.RESULT_OK) {
-                val data = result.data
-                val recognizedText = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.get(0)
-                onRecognized(recognizedText ?: "error")
-            } else {
-                onRecognized("error")
-            }
-        }
-
-        Surface(
-            modifier = Modifier
-                .fillMaxSize(),
-            color = Color.Transparent,
-            onClick = {
-                //ReadCommand.value = "Reading"
-                CommandController.Silence(true)
-                val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, "es-ES")
-                }
-                launcher.launch(intent)
-            }) {}
-    }*/
-
     @Composable
     fun SButton(
         onRecognized: (String) -> Unit,
-        provideSpeechLauncher: ((Intent) -> Unit) -> Unit // Accepts a callback
+        provideSpeechLauncher: ((Intent) -> Unit) -> Unit
     ) {
         val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if (result.resultCode == Activity.RESULT_OK) {
@@ -157,7 +119,6 @@ class MainActivity : ComponentActivity() {
             launcher.launch(intent)
         }
 
-        // Pass the launcher callback to the parent via provideSpeechLauncher
         LaunchedEffect(Unit) {
             provideSpeechLauncher(startSpeechRecognition)
         }
@@ -195,7 +156,6 @@ class MainActivity : ComponentActivity() {
             ) { innerPadding ->
                 Box(modifier = Modifier.padding(innerPadding)) {
                     AppFrame {
-                        StationListDisplay(CommandController.stationsState.value)
                         Content()
                     }
                 }
@@ -241,83 +201,58 @@ class MainActivity : ComponentActivity() {
             )
         }
     }
-
-    @Composable
-    fun StationListDisplay(stations: List<Station>) {
-        Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-            if (stations.isEmpty()) {
-                // Display a loading or empty state
-                androidx.compose.material3.Text("Fetching stations...", color = Color.White)
-            } else {
-                androidx.compose.foundation.lazy.LazyColumn {
-                    items(stations) { station ->
-                        androidx.compose.material3.Text(
-                            text = "${station.name}: ${station.url}",
-                            color = Color.White,
-                            modifier = Modifier.padding(vertical = 8.dp)
-                        )
-                    }
-                }
-            }
-        }
-    }
 }
 
-// Link Radio Clásica
-// https://dispatcher.rndfnk.com/crtve/rnerc/main/mp3/high
-
 @SuppressLint("NewApi")
-class CommandController2 (private val context: Context, TTSIntent: Intent) {
-    public var CommandContext = mutableStateOf("default")
+class CommandController2 (private val context: Context, userLocale: String) {
+    var CommandContext = "default"
 
+    var locale = userLocale
     var speechLauncher: ((Intent) -> Unit)? = null
-    var intent = TTSIntent
+    var ttsIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE, locale)
+    }
 
     var PlayState: String = "default"
     var SearchState: String = "default"
-    // Debería poder usar esto para matar a la app, pero no puedo acceder a esta propiedad, comprobar más tarde
-    //val activity = context as Activity
     var player = MediaPlayerManager
 
     private lateinit var textToSpeechEngine: TextToSpeech
-    //private var tts: TextToSpeech? = null
-    //Put API responses here
-    var response: MutableList<Station>? = null
 
-    public fun Silence(yesno: Boolean) {
-        textToSpeechEngine.stop()
-        if (yesno) player.pausePlayer()
-        else player.resumePlayer()
+    fun Silence(yesno: Boolean) {
+        if (yesno) {
+            textToSpeechEngine.stop()
+            player.pausePlayer()
+        } else {
+            player.resumePlayer()
+        }
     }
 
-    // Radio search stuff
-    /*var endpoint: Optional<String?>? = EndpointDiscovery("pamn/vcr/0.1").discover()
-    var radioBrowser: RadioBrowser = RadioBrowser(
-        ConnectionParams.builder().apiUrl(endpoint?.get() ?: "error").userAgent("pamn/vcr/0.1").timeout(5000).build()
-    )*/
-
     init {
-        CommandContext.value = "default"
+        CommandContext = "default"
         PlayState = "default"
         SearchState = "default"
         MediaPlayerManager.stopPlayer()
-        /*var r: Stream<Station> = radioBrowser.listStationsBy(de.sfuhrm.radiobrowser4j.SearchMode.BYNAME,"radio clásica")
-        // Esto puede causar problemas debido a la versión de la API...
-        response = r.toList()
-        error(response.toString())*/
     }
 
-
-    public fun initTTS() {
+    fun initTTS() {
         textToSpeechEngine = TextToSpeech(context,
             TextToSpeech.OnInitListener { status ->
-                // set our locale only if init was success.
                 if (status == TextToSpeech.SUCCESS) {
-                    textToSpeechEngine.language = Locale("es", "ES")
-                    /*ready = 1
-                    println("AAAAAAAAAAAAAAAAAAAAAAAA")
-                    println(ready)*/
+                    textToSpeechEngine.language = Locale(locale)
 
+                    textToSpeechEngine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                        override fun onStart(utteranceId: String?) {}
+
+                        override fun onDone(utteranceId: String?) {
+                            synchronized(this) {}
+                        }
+
+                        override fun onError(utteranceId: String?) {
+                            synchronized(this) {}
+                        }
+                    })
                 }
             })
     }
@@ -328,23 +263,43 @@ class CommandController2 (private val context: Context, TTSIntent: Intent) {
 
     fun listen() {
         Silence(true)
-        speechLauncher?.invoke(intent)
+        speechLauncher?.invoke(ttsIntent)
     }
 
     private fun speak(text: String) {
-        textToSpeechEngine.speak(text, QUEUE_ADD, null)
+        val utteranceId = "tts_${System.currentTimeMillis()}"
+        val latch = CountDownLatch(1)
+
+        textToSpeechEngine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(thisutteranceId: String?) {}
+
+            override fun onDone(thisutteranceId: String?) {
+                if (thisutteranceId == utteranceId) {
+                    latch.countDown()
+                }
+            }
+
+            override fun onError(thisutteranceId: String?) {
+                if (thisutteranceId == utteranceId) {
+                    latch.countDown()
+                }
+            }
+        })
+
+        textToSpeechEngine.speak(text, QUEUE_ADD, null, utteranceId)
+
+        try {
+            latch.await()
+        } catch (e: InterruptedException) {
+            println(e.printStackTrace())
+        }
     }
 
-    /*override fun onInit(status: Int) {
+    var stationsState = emptyList<Station>()
+    var stationsIterator: ListIterator<Station> = stationsState.listIterator()
 
-
-    }*/
-
-    var stationsState = mutableStateOf<List<Station>>(emptyList())
-
-
-    public fun fetchStationsAsync(term: String) {
-        val myAgent = "pamn/vcr/0.1"
+    fun fetchStationsAsync(term: String) {
+        val myAgent = "pamn/vcr/1.0"
         CoroutineScope(Dispatchers.Main).launch {
             val endpoint = withContext(Dispatchers.IO) {
                 EndpointDiscovery(myAgent).discover()
@@ -363,13 +318,11 @@ class CommandController2 (private val context: Context, TTSIntent: Intent) {
 
                 if (term != "error") {
                     val stations = withContext(Dispatchers.IO) {
-                        println(term)
                         radioBrowser.listStationsBy(de.sfuhrm.radiobrowser4j.SearchMode.BYNAME,term.replace(" ", "_")).toList()
-                        //radioBrowser.listStations(ListParameter.create().order(FieldName.NAME)).limit(64).toList()
                     }
-
-                    // Update the state with fetched stations
-                    stationsState.value = stations
+                    stationsState = stations
+                    stationsIterator = stationsState.listIterator()
+                    stationSearchComplete()
                 }
             } else {
                 println("No endpoint discovered.")
@@ -377,7 +330,14 @@ class CommandController2 (private val context: Context, TTSIntent: Intent) {
         }
     }
 
-    public fun command(command: String) {
+    private fun stationSearchComplete() {
+        if (CommandContext == "search") {
+            SearchState = "reporting"
+            command("", "report")
+        }
+    }
+
+    fun command(command: String, special: String = "") {
         if (command == "error") {
             speak("Error de escucha")
             Silence(false)
@@ -388,44 +348,40 @@ class CommandController2 (private val context: Context, TTSIntent: Intent) {
             speak("Cerrando aplicación")
             player.stopPlayer()
             textToSpeechEngine.shutdown()
-            // La idea aquí es cerrar todo
-            //finishAffinity(activity)
+            System.exit(0)
         }
-        //print(CommandContext)
-        when (CommandContext.value) {
-            "default" -> command_default(command)
-            "play" -> command_play(command)
-            "search" -> command_search(command)
+        when (CommandContext) {
+            "default" -> command_default(command, special)
+            "play" -> command_play(command, special)
+            "search" -> command_search(command, special)
             else -> {
                 error("Invalid context. How did you even manage that?")
             }
         }
     }
 
-    private fun command_default(command: String) {
+    private fun command_default(command: String, special: String) {
         when (command) {
             "buscar" -> {
-                CommandContext.value = "search"
-                /*val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, "es-ES")
-                }*/
+                CommandContext = "search"
+                SearchState = "default"
+                speak("Indique el nombre de la estación que desea buscar")
                 listen()
             }
             else -> {
+                speak(command)
                 speak("Comando no reconocido")
             }
         }
     }
 
-    private fun command_play(command: String) {
+    private fun command_play(command: String, special: String) {
         if (PlayState == "volume") {
             if (command == "cancelar") {
                 speak("Cambio de volumen cancelado")
                 PlayState = "default"
-                MediaPlayerManager.resumePlayer()
             } else {
-                val ParseResult = parseNumberFromText("es-ES",command)
+                val ParseResult = parseNumberFromText(locale,command)
                 if (ParseResult.success) {
                     if (ParseResult.value > -1 && ParseResult.value <= 100) {
                         speak("Cambiando volumen a $ParseResult.value")
@@ -434,7 +390,13 @@ class CommandController2 (private val context: Context, TTSIntent: Intent) {
                         MediaPlayerManager.resumePlayer()
                     } else {
                         speak("El nuevo volumen debe estar entre 0 y 100")
+                        listen()
+                        return
                     }
+                } else {
+                    speak("Por favor, indique un número entre 0 y 100")
+                    listen()
+                    return
                 }
             }
         } else {
@@ -445,151 +407,88 @@ class CommandController2 (private val context: Context, TTSIntent: Intent) {
                 speak("Reanudando reproductor")
                 MediaPlayerManager.resumePlayer(true)
             } else if (command == "salir") {
-                speak("Cerrando reproducción")
                 MediaPlayerManager.stopPlayer()
-                CommandContext.value = "default"
+                CommandContext = "default"
+                speak("Cerrando reproducción")
             } else if (command == "buscar") {
-                speak("Iniciando búsqueda. Por favor, indique el nombre de la emisora que desea escuchar")
-                MediaPlayerManager.pausePlayer()
-                CommandContext.value = "search"
-            } else if (command == "volumen") {
-                MediaPlayerManager.pausePlayer()
-                speak("Por favor, indique el nuevo volumen deseado entre 0 y 100")
-                PlayState = "volume"
-            }
-        }
-    }
-
-    private fun command_search(command: String) {
-        if (command == "cancelar") {
-            CommandContext.value = "default"
-            speak("Búsqueda cancelada")
-        } else if (stationsState.value.isEmpty()) {
-            speak("")
-            fetchStationsAsync(command)
-        } else if (command == "seleccionar") {
-            MediaPlayerManager.initializePlayer(context, stationsState.value[0].url)
-            CommandContext.value = "play"
-            PlayState = "default"
-        } else if (command == "siguiente") {
-            stationsState.value = stationsState.value.drop(1)
-            if (stationsState.value.isEmpty()) {
-                if (!player.checkPlayer()) CommandContext.value = "default"
-                else {
-                    CommandContext.value = "play"
-                    player.resumePlayer(true)
-                }
+                CommandContext = "search"
+                SearchState = "default"
+                speak("Indique el nombre de la estación que desea buscar")
+                listen()
                 return
-                TODO("Tell the user that there's no more results")
+            } else if (command == "volumen") {
+                PlayState = "volume"
+                speak("Indique el nuevo volumen deseado entre 0 y 100")
+                listen()
+                return
             }
         }
-        /*if (response != null)
-        when (command) {
-            //"cancel" ->
-        }*/
+        Silence(false)
+    }
+
+    var index = 0
+
+    private fun command_search(command: String, special: String) {
+        if (command == "cancelar") {
+            speak("Búsqueda cancelada")
+            SearchState = "default"
+            CommandContext = "default"
+        } else if (SearchState == "default") {
+            SearchState = "searching"
+            fetchStationsAsync(command)
+            speak("Buscando emisoras con término: $command")
+            return
+        } else if (SearchState == "searching") {
+            speak("Búsqueda en curso")
+            return
+        } else if (SearchState == "reporting") {
+            if (special == "report") {
+                if (!stationsIterator.hasNext()) {
+                    speak("No se han encontrado emisoras con el término de búsqueda especificado. Puede indicar otro término o cancelar la búsqueda")
+                    SearchState = "default"
+                    listen()
+                    return
+                } else {
+                    index = 0
+                    speak("Búsqueda completada. ${stationsState.size} resultados")
+                    speak("Diga 'siguiente' para leer resultados, 'seleccionar' para empezar reproducción, 'cancelar' para cancelar")
+                    listen()
+                    return
+                }
+            } else {
+                if (command == "siguiente") {
+                    if (stationsIterator.hasNext()) {
+                        index = stationsIterator.nextIndex()
+                        var next = stationsIterator.next()
+                        speak("Resultado ${index + 1}: ${next.name}")
+                        listen()
+                        return
+                    } else {
+                        speak("Fin de la lista de resultados")
+                        listen()
+                        return
+                    }
+                } else if (command == "anterior") {
+                    if (stationsIterator.hasPrevious()) {
+                        index = stationsIterator.previousIndex()
+                        var previous = stationsIterator.previous()
+                        speak("Resultado ${index + 1}: ${previous.name}")
+                        listen()
+                        return
+                    } else {
+                        speak("Fin de la lista de resultados")
+                        listen()
+                        return
+                    }
+                } else if (command == "seleccionar") {
+                    CommandContext = "play"
+                    PlayState = "default"
+                    SearchState = "default"
+                    speak("Iniciando reproducción")
+                    MediaPlayerManager.initializePlayer(context, stationsState[index].url)
+                }
+            }
+        }
+        Silence(false)
     }
 }
-
-
-/*class CommandContextController {
-    private var contextStack: ArrayDeque<Context> = ArrayDeque()
-
-    init {
-        contextStack.add(DefaultContext())
-    }
-
-    private interface Context {
-        // Identificador del contexto
-        val id: String
-        // Palabras/comandos/tipos que acepta este contexto
-        val trigger: Array<String>
-        // Si este contexto puede ser cancelado
-        val cancellable: Boolean
-        // Contextos alcanzables desde este contexto, si el usuario usa un "trigger" aceptado por alguno de estos se pasa a ese contexto
-        val children: Array<String>
-        // Qué decirle al usuario si pasa un comando de voz no aceptado por ningún hijo
-        val invalid: String
-
-        // Qué hacer cuando se alcanza este contexto
-        public fun onArrival()
-
-        // Qué hacer cuando el usuario pasa un comando de voz
-        public fun onCommand(command: String)
-
-        public fun onPause()
-
-        public fun onResume()
-
-        public fun onDeparture()
-    }
-
-    private class DefaultContext : Context {
-        override val id = "gen/def"
-        override val trigger = arrayOf("")
-        override val cancellable = false
-        override val children = arrayOf("gen/search", "gen/play")
-        override val invalid = "Lo siento, no he entendido el comando"
-
-        override fun onArrival() {
-            TODO("Not yet implemented")
-        }
-
-        override fun onCommand(command: String) {
-            if (command == "search") {
-
-            }
-        }
-    }
-}
-
-/*class CommandViewModel : ViewModel() {
-    var commandContext by mutableStateOf<CommandContext>(CommandContext.Default)
-        private set
-
-    var feedbackMessage by mutableStateOf("Awaiting command...")
-        private set
-
-    fun processCommand(input: String) {
-        when (commandContext) {
-            is CommandContext.Default -> handleDefaultCommand(input)
-            is CommandContext.VolumeAdjustment -> handleVolumeCommand(input)
-            is CommandContext.Custom -> handleCustomCommand(input)
-        }
-    }
-
-    private fun handleDefaultCommand(input: String) {
-        when {
-            input.contains("change volume", ignoreCase = true) -> {
-                feedbackMessage = "Volume command detected. Please specify a level."
-                commandContext = CommandContext.VolumeAdjustment
-            }
-            input.contains("play music", ignoreCase = true) -> {
-                feedbackMessage = "Playing music..."
-                playMusic()
-            }
-            else -> feedbackMessage = "Command not recognized."
-        }
-    }
-
-    private fun handleVolumeCommand(input: String) {
-        input.toIntOrNull()?.let { level ->
-            feedbackMessage = "Setting volume to $level."
-            setVolume(level)
-            commandContext = CommandContext.Default
-        } ?: run {
-            feedbackMessage = "Invalid volume level. Try again."
-        }
-    }
-
-    private fun handleCustomCommand(input: String) {
-        feedbackMessage = "Custom command: $input"
-    }
-
-    private fun playMusic() {
-        // Trigger music playback logic here
-    }
-
-    private fun setVolume(level: Int) {
-        // Adjust volume logic here
-    }
-}*/
