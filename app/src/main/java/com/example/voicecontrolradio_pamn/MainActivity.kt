@@ -177,7 +177,6 @@ class MainActivity : ComponentActivity() {
                 } else {
                     CommandController.click()
                 }
-                //if (isProcessing.value)
             }
         ) {}
     }
@@ -213,7 +212,7 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    fun GradientBackground(modifier: Modifier = Modifier, Content: @Composable () -> Unit) {
+    fun GradientBackground(Content: @Composable () -> Unit) {
         val gradientBrush = Brush.verticalGradient(
             0.5f to GlobalColorsPalette.current.backgroundStart,
             1.0f to GlobalColorsPalette.current.backgroundEnd
@@ -299,11 +298,14 @@ class CommandController2 (private val context: Context, userLocale: String) {
     var player = MediaPlayerManager
     var lastUtterance = ""
 
+    var stationsState = emptyList<Station>()
+    var stationsIterator: ListIterator<Station> = stationsState.listIterator()
+    var index = 0
+
     private lateinit var textToSpeechEngine: TextToSpeech
 
     fun Silence(yesno: Boolean) {
         if (yesno) {
-            //textToSpeechEngine.stop()
             player.pausePlayer()
         } else {
             player.resumePlayer()
@@ -322,18 +324,6 @@ class CommandController2 (private val context: Context, userLocale: String) {
             TextToSpeech.OnInitListener { status ->
                 if (status == TextToSpeech.SUCCESS) {
                     textToSpeechEngine.language = Locale(locale)
-
-                    /*textToSpeechEngine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                        override fun onStart(utteranceId: String?) {}
-
-                        override fun onDone(utteranceId: String?) {
-                            synchronized(this) {}
-                        }
-
-                        override fun onError(utteranceId: String?) {
-                            synchronized(this) {}
-                        }
-                    })*/
                 }
             })
     }
@@ -353,7 +343,6 @@ class CommandController2 (private val context: Context, userLocale: String) {
         CoroutineScope(Dispatchers.Main).launch {
             speechLauncher?.invoke(ttsIntent)
         }
-    //speechLauncher?.invoke(ttsIntent)
     }
 
     private fun speak(text: String, keep: Boolean = true) {
@@ -370,7 +359,6 @@ class CommandController2 (private val context: Context, userLocale: String) {
             }
 
             override fun onStop(thisutteranceId: String?, interrupted: Boolean) {
-                //super.onStop(utteranceId, interrupted)
                 if (thisutteranceId == utteranceId) {
                     latch.countDown()
                 }
@@ -394,9 +382,6 @@ class CommandController2 (private val context: Context, userLocale: String) {
             println(e.printStackTrace())
         }
     }
-
-    var stationsState = emptyList<Station>()
-    var stationsIterator: ListIterator<Station> = stationsState.listIterator()
 
     fun fetchStationsAsync(term: String) {
         val myAgent = "pamn/vcr/1.0"
@@ -530,8 +515,6 @@ class CommandController2 (private val context: Context, userLocale: String) {
         Silence(false)
     }
 
-    var index = 0
-
     private fun command_search(command: String, special: String) {
         if (command == "cancelar") {
             speak("Búsqueda cancelada")
@@ -548,8 +531,8 @@ class CommandController2 (private val context: Context, userLocale: String) {
         } else if (SearchState == "reporting") {
             if (special == "report") {
                 if (!stationsIterator.hasNext()) {
-                    speak("No se han encontrado emisoras con el término de búsqueda especificado. Puede indicar otro término o cancelar la búsqueda")
                     SearchState = "default"
+                    speak("No se han encontrado emisoras con el término de búsqueda especificado. Puede indicar otro término o cancelar la búsqueda")
                     listen()
                     return
                 } else {
