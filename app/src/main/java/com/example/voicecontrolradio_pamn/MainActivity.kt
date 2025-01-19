@@ -6,11 +6,14 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.os.Bundle
+import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.TextToSpeech.QUEUE_ADD
-import android.speech.tts.TextToSpeech.QUEUE_FLUSH
 import android.speech.tts.UtteranceProgressListener
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -29,10 +32,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
@@ -41,42 +42,33 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
-import androidx.core.app.ActivityCompat.finishAffinity
 import androidx.core.content.ContextCompat
 import com.example.numberparser.parseNumberFromText
 import com.example.voicecontrolradio_pamn.ui.theme.VoiceControlRadioPAMNTheme
 import com.example.voicecontrolradio_pamn.ui.theme.app.GlobalColorsPalette
 import de.sfuhrm.radiobrowser4j.ConnectionParams
 import de.sfuhrm.radiobrowser4j.EndpointDiscovery
-import de.sfuhrm.radiobrowser4j.FieldName
-import de.sfuhrm.radiobrowser4j.ListParameter
-import de.sfuhrm.radiobrowser4j.Paging
 import de.sfuhrm.radiobrowser4j.RadioBrowser
 import de.sfuhrm.radiobrowser4j.Station
-import java.lang.String.valueOf
-import java.util.Optional
-import java.util.stream.Stream
-import java.text.NumberFormat
-import kotlin.streams.toList
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
-import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
-import kotlin.math.absoluteValue
+import kotlin.math.min
+
 
 //import kotlin.coroutines.jvm.internal.CompletedContinuation.context
 
 class MainActivity : ComponentActivity() {
     private var locale = "es-ES"
     private val CommandController = CommandController2(this, locale)
+    val speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
+    val tg: ToneGenerator = ToneGenerator(AudioManager.STREAM_ACCESSIBILITY, 100)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -86,6 +78,7 @@ class MainActivity : ComponentActivity() {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), 1)
         }
         val isProcessing = mutableStateOf(false)
+        val level = mutableStateOf(0f)
 
         enableEdgeToEdge()
         setContent {
@@ -103,11 +96,17 @@ class MainActivity : ComponentActivity() {
                         startAnimation = { ->
                             isProcessing.value = true
                         },
+                        isRecording = { ->
+                            return@SButton isProcessing.value
+                        },
+                        animationRMS = { value ->
+                            level.value = value
+                        },
                         endAnimation = {
                             isProcessing.value = false
                         }
                     )
-                    PulsatingRing(isProcessing.value) {
+                    PulsatingRing(isProcessing.value, level.value) {
                         CenteredLogo()
                     }
                 }
@@ -120,26 +119,51 @@ class MainActivity : ComponentActivity() {
         onRecognized: (String) -> Unit,
         provideSpeechLauncher: ((Intent) -> Unit) -> Unit,
         startAnimation: () -> Unit,
+        isRecording: () -> Boolean,
+        animationRMS: (Float) -> Unit,
         endAnimation: () -> Unit
     ) {
-        val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            if (result.resultCode == Activity.RESULT_OK) {
-                val data = result.data
-                val recognizedText = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.get(0)
-                endAnimation()
-                onRecognized(recognizedText ?: "error")
-            } else {
-                endAnimation()
-                onRecognized("error")
-            }
-        }
-
         val startSpeechRecognition: (Intent) -> Unit = { intent ->
-            startAnimation()
-            launcher.launch(intent)
+            tg.startTone(ToneGenerator.TONE_DTMF_1,50)
+            speechRecognizer.startListening(intent)
         }
 
         LaunchedEffect(Unit) {
+            speechRecognizer.setRecognitionListener(object : RecognitionListener {
+                override fun onReadyForSpeech(params: Bundle?) {
+                    startAnimation()
+                }
+
+                override fun onBeginningOfSpeech() {}
+
+                override fun onRmsChanged(rmsdB: Float) {
+                    animationRMS(rmsdB)
+                }
+
+                override fun onBufferReceived(buffer: ByteArray?) {}
+
+                override fun onEndOfSpeech() {
+                    endAnimation()
+                    tg.startTone(ToneGenerator.TONE_PROP_BEEP)
+                }
+
+                override fun onError(error: Int) {
+                    endAnimation()
+                    onRecognized("error")
+                }
+
+                override fun onResults(results: Bundle?) {
+                    val recognizedText = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.get(0) ?: "error"
+                    onRecognized(recognizedText)
+                }
+
+                override fun onPartialResults(partialResults: Bundle?) {
+                    endAnimation()
+                    onRecognized("error")
+                }
+
+                override fun onEvent(eventType: Int, params: Bundle?) {}
+            })
             provideSpeechLauncher(startSpeechRecognition)
         }
 
@@ -148,24 +172,30 @@ class MainActivity : ComponentActivity() {
                 .fillMaxSize(),
             color = Color.Transparent,
             onClick = {
-                CommandController.listen()
+                if (isRecording()) {
+                    speechRecognizer.stopListening()
+                } else {
+                    CommandController.click()
+                }
+                //if (isProcessing.value)
             }
         ) {}
     }
 
     @Composable
-    fun PulsatingRing(isProcessing: Boolean, content: @Composable () -> Unit) {
+    fun PulsatingRing(isProcessing: Boolean, level: Float, content: @Composable () -> Unit) {
         Box(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
         ) {
             if (isProcessing) {
                 val infiniteTransition = rememberInfiniteTransition()
+                //val scale = remember { mutableStateOf(1.1f + level/100) }//min(level/1000, 0.3f)) }
                 val scale = infiniteTransition.animateFloat(
-                    initialValue = 1f,
-                    targetValue = 1.1f,
+                    initialValue = 1.1f,
+                    targetValue = 1.125f,
                     animationSpec = infiniteRepeatable(
-                        animation = tween(200, easing = LinearEasing),
+                        animation = tween(750, easing = LinearEasing),
                         repeatMode = RepeatMode.Reverse
                     )
                 )
@@ -173,7 +203,7 @@ class MainActivity : ComponentActivity() {
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     drawCircle(
                         color = Color.White.copy(alpha = 0.5f),
-                        radius = size.minDimension / 3 * scale.value,
+                        radius = size.minDimension / 3 * (scale.value + min(level/40, 0.3f)),
                         center = center
                     )
                 }
@@ -262,16 +292,18 @@ class CommandController2 (private val context: Context, userLocale: String) {
         putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
         putExtra(RecognizerIntent.EXTRA_LANGUAGE, locale)
     }
+    val tg: ToneGenerator = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 50)
 
     var PlayState: String = "default"
     var SearchState: String = "default"
     var player = MediaPlayerManager
+    var lastUtterance = ""
 
     private lateinit var textToSpeechEngine: TextToSpeech
 
     fun Silence(yesno: Boolean) {
         if (yesno) {
-            textToSpeechEngine.stop()
+            //textToSpeechEngine.stop()
             player.pausePlayer()
         } else {
             player.resumePlayer()
@@ -291,7 +323,7 @@ class CommandController2 (private val context: Context, userLocale: String) {
                 if (status == TextToSpeech.SUCCESS) {
                     textToSpeechEngine.language = Locale(locale)
 
-                    textToSpeechEngine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                    /*textToSpeechEngine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                         override fun onStart(utteranceId: String?) {}
 
                         override fun onDone(utteranceId: String?) {
@@ -301,7 +333,7 @@ class CommandController2 (private val context: Context, userLocale: String) {
                         override fun onError(utteranceId: String?) {
                             synchronized(this) {}
                         }
-                    })
+                    })*/
                 }
             })
     }
@@ -310,12 +342,21 @@ class CommandController2 (private val context: Context, userLocale: String) {
         speechLauncher = UserSpeechListener
     }
 
-    fun listen() {
+    fun click() {
         Silence(true)
-        speechLauncher?.invoke(ttsIntent)
+        if (!textToSpeechEngine.isSpeaking()) listen()
+        else textToSpeechEngine.stop()
     }
 
-    private fun speak(text: String) {
+    fun listen() {
+        Silence(true)
+        CoroutineScope(Dispatchers.Main).launch {
+            speechLauncher?.invoke(ttsIntent)
+        }
+    //speechLauncher?.invoke(ttsIntent)
+    }
+
+    private fun speak(text: String, keep: Boolean = true) {
         val utteranceId = "tts_${System.currentTimeMillis()}"
         val latch = CountDownLatch(1)
 
@@ -328,6 +369,13 @@ class CommandController2 (private val context: Context, userLocale: String) {
                 }
             }
 
+            override fun onStop(thisutteranceId: String?, interrupted: Boolean) {
+                //super.onStop(utteranceId, interrupted)
+                if (thisutteranceId == utteranceId) {
+                    latch.countDown()
+                }
+            }
+
             override fun onError(thisutteranceId: String?) {
                 if (thisutteranceId == utteranceId) {
                     latch.countDown()
@@ -335,7 +383,10 @@ class CommandController2 (private val context: Context, userLocale: String) {
             }
         })
 
-        textToSpeechEngine.speak(text, QUEUE_ADD, null, utteranceId)
+        if (keep) lastUtterance = text
+        CoroutineScope(Dispatchers.IO).launch {
+            textToSpeechEngine.speak(text, QUEUE_ADD, null, utteranceId)
+        }
 
         try {
             latch.await()
@@ -349,7 +400,7 @@ class CommandController2 (private val context: Context, userLocale: String) {
 
     fun fetchStationsAsync(term: String) {
         val myAgent = "pamn/vcr/1.0"
-        CoroutineScope(Dispatchers.Main).launch {
+        CoroutineScope(Dispatchers.IO).launch {
             val endpoint = withContext(Dispatchers.IO) {
                 EndpointDiscovery(myAgent).discover()
             }
@@ -388,23 +439,28 @@ class CommandController2 (private val context: Context, userLocale: String) {
 
     fun command(command: String, special: String = "") {
         if (command == "error") {
-            speak("Error de escucha")
+            speak("Error de escucha", false)
             Silence(false)
             return
-        }
-
-        if (command == "cerrar") {
-            speak("Cerrando aplicación")
+        } else if (command == "cerrar") {
+            speak("Cerrando aplicación", false)
             player.stopPlayer()
             textToSpeechEngine.shutdown()
+            tg.release()
             System.exit(0)
-        }
-        when (CommandContext) {
-            "default" -> command_default(command, special)
-            "play" -> command_play(command, special)
-            "search" -> command_search(command, special)
-            else -> {
-                error("Invalid context. How did you even manage that?")
+        } else if (command == "repetir") {
+            if (lastUtterance != "") speak(lastUtterance, false)
+            // Esto es un poco "agresivo", pero no se me ocurre nada mejor
+            else speak("Nada que repetir", false)
+            return
+        } else {
+            when (CommandContext) {
+                "default" -> command_default(command, special)
+                "play" -> command_play(command, special)
+                "search" -> command_search(command, special)
+                else -> {
+                    error("Invalid context. How did you even manage that?")
+                }
             }
         }
     }
@@ -418,8 +474,7 @@ class CommandController2 (private val context: Context, userLocale: String) {
                 listen()
             }
             else -> {
-                speak(command)
-                speak("Comando no reconocido")
+                speak("$command, comando no reconocido", false)
             }
         }
     }
@@ -433,7 +488,7 @@ class CommandController2 (private val context: Context, userLocale: String) {
                 val ParseResult = parseNumberFromText(locale,command)
                 if (ParseResult.success) {
                     if (ParseResult.value > -1 && ParseResult.value <= 100) {
-                        speak("Cambiando volumen a $ParseResult.value")
+                        speak("Cambiando volumen a ${ParseResult.value}")
                         MediaPlayerManager.adjustVolume(ParseResult.value)
                         PlayState = "default"
                         MediaPlayerManager.resumePlayer()
@@ -488,7 +543,7 @@ class CommandController2 (private val context: Context, userLocale: String) {
             speak("Buscando emisoras con término: $command")
             return
         } else if (SearchState == "searching") {
-            speak("Búsqueda en curso")
+            speak("Búsqueda en curso", false)
             return
         } else if (SearchState == "reporting") {
             if (special == "report") {
@@ -499,8 +554,8 @@ class CommandController2 (private val context: Context, userLocale: String) {
                     return
                 } else {
                     index = 0
-                    speak("Búsqueda completada. ${stationsState.size} resultados")
-                    speak("Diga 'siguiente' para leer resultados, 'seleccionar' para empezar reproducción, 'cancelar' para cancelar")
+                    speak("Búsqueda completada. ${stationsState.size} resultados", false)
+                    speak("Diga 'siguiente' o 'anterior' para navegar la lista de resultados, 'seleccionar' para empezar la reproducción, 'cancelar' para cancelar")
                     listen()
                     return
                 }
@@ -508,24 +563,24 @@ class CommandController2 (private val context: Context, userLocale: String) {
                 if (command == "siguiente") {
                     if (stationsIterator.hasNext()) {
                         index = stationsIterator.nextIndex()
-                        var next = stationsIterator.next()
+                        val next = stationsIterator.next()
                         speak("Resultado ${index + 1}: ${next.name}")
                         listen()
                         return
                     } else {
-                        speak("Fin de la lista de resultados")
+                        speak("Fin de la lista de resultados", false)
                         listen()
                         return
                     }
                 } else if (command == "anterior") {
                     if (stationsIterator.hasPrevious()) {
                         index = stationsIterator.previousIndex()
-                        var previous = stationsIterator.previous()
+                        val previous = stationsIterator.previous()
                         speak("Resultado ${index + 1}: ${previous.name}")
                         listen()
                         return
                     } else {
-                        speak("Fin de la lista de resultados")
+                        speak("Fin de la lista de resultados", false)
                         listen()
                         return
                     }
@@ -533,7 +588,7 @@ class CommandController2 (private val context: Context, userLocale: String) {
                     CommandContext = "play"
                     PlayState = "default"
                     SearchState = "default"
-                    speak("Iniciando reproducción")
+                    speak("Iniciando reproducción de la emisora ${stationsState[index].name}")
                     MediaPlayerManager.initializePlayer(context, stationsState[index].url)
                 }
             }
