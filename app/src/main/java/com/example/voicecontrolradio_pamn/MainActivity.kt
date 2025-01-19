@@ -17,6 +17,12 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -79,6 +85,7 @@ class MainActivity : ComponentActivity() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), 1)
         }
+        val isProcessing = mutableStateOf(false)
 
         enableEdgeToEdge()
         setContent {
@@ -92,9 +99,17 @@ class MainActivity : ComponentActivity() {
                         },
                         provideSpeechLauncher = { launcher ->
                             CommandController.setListener(launcher)
+                        },
+                        startAnimation = { ->
+                            isProcessing.value = true
+                        },
+                        endAnimation = {
+                            isProcessing.value = false
                         }
                     )
-                    CenteredLogo()
+                    PulsatingRing(isProcessing.value) {
+                        CenteredLogo()
+                    }
                 }
             }
         }
@@ -103,19 +118,24 @@ class MainActivity : ComponentActivity() {
     @Composable
     fun SButton(
         onRecognized: (String) -> Unit,
-        provideSpeechLauncher: ((Intent) -> Unit) -> Unit
+        provideSpeechLauncher: ((Intent) -> Unit) -> Unit,
+        startAnimation: () -> Unit,
+        endAnimation: () -> Unit
     ) {
         val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if (result.resultCode == Activity.RESULT_OK) {
                 val data = result.data
                 val recognizedText = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.get(0)
+                endAnimation()
                 onRecognized(recognizedText ?: "error")
             } else {
+                endAnimation()
                 onRecognized("error")
             }
         }
 
         val startSpeechRecognition: (Intent) -> Unit = { intent ->
+            startAnimation()
             launcher.launch(intent)
         }
 
@@ -131,6 +151,35 @@ class MainActivity : ComponentActivity() {
                 CommandController.listen()
             }
         ) {}
+    }
+
+    @Composable
+    fun PulsatingRing(isProcessing: Boolean, content: @Composable () -> Unit) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            if (isProcessing) {
+                val infiniteTransition = rememberInfiniteTransition()
+                val scale = infiniteTransition.animateFloat(
+                    initialValue = 1f,
+                    targetValue = 1.1f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(200, easing = LinearEasing),
+                        repeatMode = RepeatMode.Reverse
+                    )
+                )
+
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    drawCircle(
+                        color = Color.White.copy(alpha = 0.5f),
+                        radius = size.minDimension / 3 * scale.value,
+                        center = center
+                    )
+                }
+            }
+            content()
+        }
     }
 
     @Composable
