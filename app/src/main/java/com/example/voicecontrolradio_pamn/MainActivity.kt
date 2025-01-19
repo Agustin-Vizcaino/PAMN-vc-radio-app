@@ -196,7 +196,7 @@ class MainActivity : ComponentActivity() {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Image(
                 painter = painterResource(id = R.mipmap.logo),
-                contentDescription = "Centered Logo",
+                contentDescription = "Centered logo",
                 modifier = Modifier.fillMaxSize(0.66f)
             )
         }
